@@ -157,7 +157,3 @@ db.json
 # тесты
 tests/
 /tests/
-
-# шаблоны
-/blogicum/templates/
-templates/

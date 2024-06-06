@@ -145,8 +145,19 @@ dmypy.json
 
 .mypy_cache
 
-# папки со статикой и медиа
-media/
-
 sent_emails/
 
+# папки со статикой и медиа
+media/
+blogicum/static/
+
+# исходники фикстур
+db.json
+
+# тесты
+tests/
+/tests/
+
+# шаблоны
+/blogicum/templates/
+templates/

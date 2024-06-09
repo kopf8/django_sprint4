@@ -30,7 +30,7 @@
             <article>
               {% if form.instance.image %}
                 <a href="{{ form.instance.image.url }}" target="_blank">
-                  <img class="border-3 rounded img-fluid img-thumbnail mb-2" src="{{ form.instance.image.url }}">
+                  <img class="border-3 rounded img-fluid img-thumbnail mb-2" src="{{ form.instance.image.url }}" alt="Фото">
                 </a>
               {% endif %}
               <p>{{ form.instance.pub_date|date:"d E Y" }} | {% if form.instance.location and form.instance.location.is_published %}{{ form.instance.location.name }}{% else %}Планета Земля{% endif %}<br>

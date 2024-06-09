@@ -1,139 +1,293 @@
 from django.conf import settings
-from django.contrib.auth.decorators import login_required
-from django.core.paginator import Paginator
-from django.db.models import Count
-from django.shortcuts import get_object_or_404, redirect, render
+from django.contrib.auth import get_user_model
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import Http404
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
+from django.views.generic import (CreateView, DeleteView, DetailView, ListView,
+                                  UpdateView)
 
-from .forms import CommentForm, PostForm, UserForm
-from .models import Category, Comment, Post, User
+from .forms import CommentForm, PostForm, UserUpdateForm
+from .models import Category, Comment, Post
 
-
-def get_paginator(request, queryset,
-                  number_of_pages=settings.NUMBER_OF_PAGINATOR_PAGES):
-    paginator = Paginator(queryset, number_of_pages)
-    page_number = request.GET.get('page')
-    return paginator.get_page(page_number)
+User = get_user_model()
 
 
-def index(request):
-    post_list = Post.published.all().annotate(comment_count=Count(
-        'comments'))
-    page_obj = get_paginator(request, post_list)
-    return render(request, 'blog/index.html', {'page_obj': page_obj})
+class CommentMixin:
+    """
+    Adds model, form_class, template_name attributes and modified method
+    get_success_url.
+    """
+
+    model = Comment
+    form_class = CommentForm
+    template_name = 'blog/comment.html'
+
+    def get_success_url(self):
+        """
+        Determines the URL to redirect the user to the correct post when the
+        CommentForm is successfully filled in & processed.
+        """
+        return reverse(
+            'blog:post_detail', kwargs={'post_pk': self.kwargs['post_pk']}
+        )
 
 
-def post_detail(request, post_id):
-    post = get_object_or_404(Post, pk=post_id)
-    if request.user != post.author:
-        post = get_object_or_404(Post.published.all(), pk=post_id)
-    form = CommentForm(request.POST or None)
-    comments = Comment.objects.select_related('author').filter(post=post)
-    context = {'post': post, 'form': form, 'comments': comments}
-    return render(request, 'blog/detail.html', context)
+class CommentDispatchMixin:
+    """Adds pk_url_kwarg attribute and modified method dispatch."""
+
+    pk_url_kwarg = 'comment_pk'
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Gets the correct comment, or raises 404 error
+        if the comment does not exist.
+        Redirects to the post page if comment author is not equal to the
+        request user.
+        """
+        comment = get_object_or_404(Comment, pk=kwargs['comment_pk'])
+        if comment.author != request.user:
+            return redirect(
+                'blog:post_detail', post_pk=kwargs['post_pk']
+            )
+        return super().dispatch(request, *args, **kwargs)
 
 
-@login_required
-def create_post(request):
-    form = PostForm(request.POST or None, files=request.FILES or None)
-    if form.is_valid():
-        post = form.save(commit=False)
-        post.author = request.user
-        post.save()
-        return redirect('blog:profile', request.user)
-    return render(request, 'blog/create.html', {'form': form})
+class PostDispatchMixin:
+    """
+    Adds model, form_class, template_name, pk_url_kwarg attributes and
+    modified method dispatch.
+    """
+
+    model = Post
+    form_class = PostForm
+    template_name = 'blog/create.html'
+    pk_url_kwarg = 'post_pk'
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Gets the correct post, or raise 404 error if the post does not exist.
+        Redirects to the post page if post author is not equal to the
+        request user.
+        """
+        post = get_object_or_404(Post, pk=kwargs['post_pk'])
+        if post.author != self.request.user:
+            return redirect('blog:post_detail', post_pk=kwargs['post_pk'])
+        return super().dispatch(request, *args, **kwargs)
 
 
-@login_required
-def edit_post(request, post_id):
-    post = get_object_or_404(Post, pk=post_id)
-    if request.user != post.author:
-        return redirect('blog:post_detail', post_id)
-    form = PostForm(request.POST or None, instance=post)
-    if form.is_valid():
-        form.save()
-        return redirect('blog:post_detail', post_id)
-    return render(request, 'blog/create.html', {'form': form})
+class PaginateMixin:
+    """Adds model and paginate_by attributes"""
+
+    model = Post
+    paginate_by = settings.POSTS_ON_PAGE
 
 
-@login_required
-def delete_post(request, post_id):
-    post = get_object_or_404(Post, pk=post_id)
-    if request.user != post.author:
-        return redirect('blog:post_detail', post_id)
-    form = PostForm(request.POST or None, instance=post)
-    if request.method == 'POST':
-        post.delete()
-        return redirect('blog:index')
-    return render(request, 'blog/create.html', {'form': form})
+class HomepageListView(PaginateMixin, ListView):
+    """
+    Displays homepage with all posts, based on the "index.html"
+    template.
+    """
+
+    template_name = 'blog/index.html'
+    queryset = Post.published.all()
 
 
-@login_required
-def add_comment(request, post_id):
-    post = get_object_or_404(Post, pk=post_id)
-    form = CommentForm(request.POST or None)
-    if form.is_valid():
-        comment = form.save(commit=False)
-        comment.author = request.user
-        comment.post = post
-        comment.save()
-    return redirect('blog:post_detail', post_id)
+class CategoryListView(PaginateMixin, ListView):
+    """
+    Displays posts under specific category, using the "category.html"
+    template.
+    """
+
+    template_name = 'blog/category.html'
+
+    def get_queryset(self):
+        """
+        Returns the QuerySet of the specific category.
+        If this category does not exist or this category is not published,
+        raises 404 error.
+        """
+        category = get_object_or_404(
+            Category, slug=self.kwargs['category_slug'], is_published=True
+        )
+        queryset = Post.published.all().filter(
+            category=category
+        )
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        """Adds information about the category to the context."""
+        context = super().get_context_data(**kwargs)
+        context['category'] = get_object_or_404(
+            Category, slug=self.kwargs['category_slug']
+        )
+        return context
 
 
-@login_required
-def edit_comment(request, post_id, comment_id):
-    comment = get_object_or_404(Comment, pk=comment_id)
-    if request.user != comment.author:
-        return redirect('blog:post_detail', post_id)
-    form = CommentForm(request.POST or None, instance=comment)
-    if form.is_valid():
-        form.save()
-        return redirect('blog:post_detail', post_id)
-    context = {'comment': comment, 'form': form}
-    return render(request, 'blog/create.html', context)
+class ProfileUpdateView(LoginRequiredMixin, UpdateView):
+    """
+    Displays UserUpdateForm with user instance, based on the "user.html"
+    template.
+    """
+
+    model = User
+    form_class = UserUpdateForm
+    template_name = 'blog/user.html'
+
+    def get_object(self, queryset=None):
+        """Returns the username from the request."""
+        return User.objects.get(username=self.request.user)
+
+    def get_success_url(self):
+        """
+        Sets the URL for redirect to the correct user profile when the
+        UserUpdateForm is successfully filled in & processed.
+        """
+        return reverse('blog:profile', kwargs={'username': self.request.user})
 
 
-@login_required
-def delete_comment(request, post_id, comment_id):
-    comment = get_object_or_404(Comment, pk=comment_id)
-    if request.user != comment.author:
-        return redirect('blog:post_detail', post_id)
-    if request.method == 'POST':
-        comment.delete()
-        return redirect('blog:post_detail', post_id)
-    return render(request, 'blog/comment.html', {'comment': comment})
+class ProfileListView(PaginateMixin, ListView):
+    """
+    Displays posts of the specific author, based on the "profile.html"
+    template.
+    """
+
+    template_name = 'blog/profile.html'
+
+    def get_queryset(self):
+        """
+        Returns the published QuerySet of the specific author
+        if request user is not equal to the author.
+        Returns all posts of the author if request user is equal to the author.
+        Raises 404 error if there is no correct author.
+        """
+        author = get_object_or_404(User, username=self.kwargs['username'])
+        if self.request.user == author:
+            queryset = Post.objects.select_related(
+                'author', 'category', 'location'
+            ).filter(
+                author=author
+            )
+        else:
+            queryset = Post.published.all().filter(
+                author=author
+            )
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        """Adds information about the user to the context."""
+        context = super().get_context_data(**kwargs)
+        context['profile'] = get_object_or_404(
+            User, username=self.kwargs['username']
+        )
+        return context
 
 
-def profile(request, username):
-    profile = get_object_or_404(User, username=username)
-    posts = Post.objects.select_related(
-        'category',
-        'location',
-        'author'
-    ).annotate(comment_count=Count('comments')
-               ).filter(author=profile).order_by('-pub_date')
-    if request.user != profile:
-        posts = Post.published.all().annotate(comment_count=Count(
-            'comments')).filter(author=profile)
-    page_obj = get_paginator(request, posts)
-    context = {'profile': profile, 'page_obj': page_obj}
-    return render(request, 'blog/profile.html', context)
+class PostCreateView(LoginRequiredMixin, CreateView):
+    """Displays PostForm based on "create.html" template."""
+
+    model = Post
+    form_class = PostForm
+    template_name = 'blog/create.html'
+
+    def form_valid(self, form):
+        """Adds the author to the form."""
+        form.instance.author = self.request.user
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        """
+        Sets the URL for redirect to the correct user profile when the
+        UserCreateForm is successfully filled in & processed.
+        """
+        return reverse('blog:profile', kwargs={'username': self.request.user})
 
 
-@login_required
-def edit_profile(request):
-    profile = get_object_or_404(User, username=request.user)
-    form = UserForm(request.POST or None, instance=profile)
-    if form.is_valid():
-        form.save()
-        return redirect('blog:profile', request.user)
-    return render(request, 'blog/user.html', {'form': form})
+class PostDetailView(DetailView):
+    """Displays correct post based on "detail.html" template."""
+
+    model = Post
+    template_name = 'blog/detail.html'
+    pk_url_kwarg = 'post_pk'
+
+    def dispatch(self, request, *args, **kwargs):
+        """
+        Gets the correct post, or raises 404 error if the post does not exist.
+        Raises 404 error if post author is not equal to the request user and
+        post is not published.
+        """
+        post = get_object_or_404(Post, pk=kwargs['post_pk'])
+        if post.is_published is False and request.user != post.author:
+            raise Http404
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        """Adds the CommentForm and post comments to the context."""
+        context = super().get_context_data(**kwargs)
+        context['form'] = CommentForm()
+        context['comments'] = (
+            self.object.comments.select_related('author')
+        )
+        return context
 
 
-def category_posts(request, category_slug):
-    category = get_object_or_404(
-        Category, is_published=True, slug=category_slug
-    )
-    post_list = category.posts(manager='published').all()
-    page_obj = get_paginator(request, post_list)
-    return render(request, 'blog/category.html',
-                  {'category': category, 'page_obj': page_obj})
+class PostUpdateView(PostDispatchMixin, LoginRequiredMixin, UpdateView):
+    """
+    Displays PostForm with post instance based on the "create.html"
+    template.
+    """
+
+    def get_success_url(self):
+        """
+        Determines the URL for redirect to the correct post when the
+        PostForm is successfully filled in & processed.
+        """
+        return reverse(
+            'blog:post_detail', kwargs={'post_pk': self.kwargs['post_pk']}
+        )
+
+
+class PostDeleteView(PostDispatchMixin, LoginRequiredMixin, DeleteView):
+    """CBV that displays post information based on "create.html" template."""
+
+    def get_context_data(self, **kwargs):
+        """Adds the PostForm with related instance to the context."""
+        context = super().get_context_data(**kwargs)
+        instance = Post.objects.get(pk=self.kwargs['post_pk'])
+        context['form'] = PostForm(instance=instance)
+        return context
+
+    def get_success_url(self):
+        """
+        Determines the URL for redirect to the correct user profile when the
+        PostForm is successfully filled in & processed.
+        """
+        return reverse('blog:profile', kwargs={'username': self.request.user})
+
+
+class CommentCreateView(CommentMixin, LoginRequiredMixin, CreateView):
+    """Displays CommentForm based on "comment.html" template."""
+
+    def form_valid(self, form):
+        """Adds the author and post to the form."""
+        post = get_object_or_404(Post, pk=self.kwargs['post_pk'])
+        form.instance.author = self.request.user
+        form.instance.post = post
+        return super().form_valid(form)
+
+
+class CommentDeleteView(
+    CommentMixin, CommentDispatchMixin, LoginRequiredMixin, DeleteView
+):
+    """Displays comment information based on "comment.html" template."""
+    pass
+
+
+class CommentUpdateView(
+    CommentMixin, CommentDispatchMixin, LoginRequiredMixin, UpdateView
+):
+    """
+    Displays CommentForm with comment instance based on "comment.html"
+    template.
+    """
+    pass

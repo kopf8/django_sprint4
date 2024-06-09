@@ -1,14 +1,17 @@
 from django.shortcuts import render
+from django.views.generic import TemplateView
 
 
-def about(request):
-    template = 'pages/about.html'
-    return render(request, template)
+class About(TemplateView):
+    """CBV that displays "About" page based on 'about.html' template."""
+
+    template_name = 'pages/about.html'
 
 
-def rules(request):
-    template = 'pages/rules.html'
-    return render(request, template)
+class Rules(TemplateView):
+    """CBV that displays "Rules" page based on 'rules.html' template."""
+
+    template_name = 'pages/rules.html'
 
 
 def csrf_failure(request, reason=''):

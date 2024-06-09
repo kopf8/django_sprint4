@@ -1,12 +1,15 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.db.models import Count
 from django.utils import timezone
 
 User = get_user_model()
 
 
 class BaseModel(models.Model):
+    """Base class for all models."""
+
     is_published = models.BooleanField(
         default=True,
         verbose_name='Опубликовано',
@@ -22,6 +25,7 @@ class BaseModel(models.Model):
 
 
 class Category(BaseModel):
+    """Category model."""
 
     title = models.CharField(
         max_length=settings.MAX_LENGTH,
@@ -37,17 +41,18 @@ class Category(BaseModel):
         )
     )
 
-    objects = None
-
     class Meta:
         verbose_name = 'категория'
         verbose_name_plural = 'Категории'
 
     def __str__(self):
+        """Returns the category name."""
         return self.title
 
 
 class Location(BaseModel):
+    """Location model."""
+
     name = models.CharField(
         max_length=settings.MAX_LENGTH,
         verbose_name='Название места'
@@ -58,10 +63,12 @@ class Location(BaseModel):
         verbose_name_plural = 'Местоположения'
 
     def __str__(self):
+        """Returns the location name."""
         return self.name
 
 
 class PostQuerySet(models.QuerySet):
+    """Selects all related objects."""
 
     def with_related_data(self):
         return (
@@ -70,6 +77,10 @@ class PostQuerySet(models.QuerySet):
         )
 
     def published(self):
+        """
+        Returns all published posts in published category with published
+        date not in the future.
+        """
         return self.filter(
             is_published=True,
             category__is_published=True,
@@ -78,15 +89,22 @@ class PostQuerySet(models.QuerySet):
 
 
 class PublishedPostManager(models.Manager):
+    """
+    Uses QuerySet to get all published posts and display count of published
+    comments for the post.
+    """
+
     def get_queryset(self) -> PostQuerySet:
         return (
             PostQuerySet(self.model)
             .with_related_data()
             .published()
+            .annotate(comment_count=Count('comments'))
         )
 
 
 class Post(BaseModel):
+    """Post model."""
 
     title = models.CharField(
         max_length=settings.MAX_LENGTH,
@@ -129,10 +147,13 @@ class Post(BaseModel):
         ordering = ['-pub_date']
 
     def __str__(self):
+        """Returns the post title."""
         return self.title
 
 
 class Comment(models.Model):
+    """Comment model."""
+
     objects = None
     text = models.TextField('Текст комментария')
     post = models.ForeignKey(
@@ -150,4 +171,5 @@ class Comment(models.Model):
         ordering = ('created_at',)
 
     def __str__(self):
+        """Returns the comment text."""
         return self.text

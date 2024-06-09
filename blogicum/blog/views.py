@@ -280,6 +280,7 @@ class CommentDeleteView(
     CommentMixin, CommentDispatchMixin, LoginRequiredMixin, DeleteView
 ):
     """Displays comment information based on "comment.html" template."""
+
     pass
 
 
@@ -290,4 +291,5 @@ class CommentUpdateView(
     Displays CommentForm with comment instance based on "comment.html"
     template.
     """
+
     pass

@@ -74,6 +74,8 @@ class PostQuerySet(models.QuerySet):
         return (
             self.select_related('author', 'location', 'category')
             .all()
+            .annotate(comment_count=Count('comments'))
+            .order_by('-pub_date')
         )
 
     def published(self):
@@ -99,7 +101,6 @@ class PublishedPostManager(models.Manager):
             PostQuerySet(self.model)
             .with_related_data()
             .published()
-            .annotate(comment_count=Count('comments'))
         )
 
 
@@ -122,7 +123,8 @@ class Post(BaseModel):
     author = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        verbose_name='Автор публикации'
+        verbose_name='Автор публикации',
+        related_name='posts'
     )
     location = models.ForeignKey(
         Location,

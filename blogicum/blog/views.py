@@ -45,7 +45,7 @@ class CommentDispatchMixin:
         Redirects to the post page if comment author is not equal to the
         request user.
         """
-        comment = get_object_or_404(Comment, pk=kwargs['comment_pk'])
+        comment = get_object_or_404(Comment, pk=kwargs[self.pk_url_kwarg])
         if comment.author != request.user:
             return redirect(
                 'blog:post_detail', post_pk=kwargs['post_pk']
@@ -70,9 +70,12 @@ class PostDispatchMixin:
         Redirects to the post page if post author is not equal to the
         request user.
         """
-        post = get_object_or_404(Post, pk=kwargs['post_pk'])
+        post = get_object_or_404(Post, pk=kwargs[self.pk_url_kwarg])
         if post.author != self.request.user:
-            return redirect('blog:post_detail', post_pk=kwargs['post_pk'])
+            return redirect(
+                'blog:post_detail',
+                post_pk=kwargs[self.pk_url_kwarg]
+            )
         return super().dispatch(request, *args, **kwargs)
 
 
@@ -99,6 +102,7 @@ class CategoryListView(PaginateMixin, ListView):
     template.
     """
 
+    slug_url_kwarg = 'category_slug'
     template_name = 'blog/category.html'
 
     def get_queryset(self):
@@ -108,11 +112,9 @@ class CategoryListView(PaginateMixin, ListView):
         raises 404 error.
         """
         category = get_object_or_404(
-            Category, slug=self.kwargs['category_slug'], is_published=True
+            Category, slug=self.kwargs[self.slug_url_kwarg], is_published=True
         )
-        queryset = Post.published.all().filter(
-            category=category
-        )
+        queryset = category.posts.published()
         return queryset
 
     def get_context_data(self, **kwargs):
@@ -136,7 +138,7 @@ class ProfileUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_object(self, queryset=None):
         """Returns the username from the request."""
-        return User.objects.get(username=self.request.user)
+        return self.request.user
 
     def get_success_url(self):
         """
@@ -163,13 +165,9 @@ class ProfileListView(PaginateMixin, ListView):
         """
         author = get_object_or_404(User, username=self.kwargs['username'])
         if self.request.user == author:
-            queryset = Post.objects.select_related(
-                'author', 'category', 'location'
-            ).filter(
-                author=author
-            )
+            queryset = author.posts.with_related_data()
         else:
-            queryset = Post.published.all().filter(
+            queryset = author.posts.with_related_data().filter(
                 author=author
             )
         return queryset
@@ -200,7 +198,10 @@ class PostCreateView(LoginRequiredMixin, CreateView):
         Sets the URL for redirect to the correct user profile when the
         UserCreateForm is successfully filled in & processed.
         """
-        return reverse('blog:profile', kwargs={'username': self.request.user})
+        return reverse(
+            'blog:profile',
+            kwargs={'username': self.request.user}
+        )
 
 
 class PostDetailView(DetailView):
@@ -262,7 +263,10 @@ class PostDeleteView(PostDispatchMixin, LoginRequiredMixin, DeleteView):
         Determines the URL for redirect to the correct user profile when the
         PostForm is successfully filled in & processed.
         """
-        return reverse('blog:profile', kwargs={'username': self.request.user})
+        return reverse(
+            'blog:profile',
+            kwargs={'username': self.request.user}
+        )
 
 
 class CommentCreateView(CommentMixin, LoginRequiredMixin, CreateView):

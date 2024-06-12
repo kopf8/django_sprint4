@@ -114,8 +114,7 @@ class CategoryListView(PaginateMixin, ListView):
         category = get_object_or_404(
             Category, slug=self.kwargs[self.slug_url_kwarg], is_published=True
         )
-        queryset = category.posts.published()
-        return queryset
+        return category.posts.published()
 
     def get_context_data(self, **kwargs):
         """Adds information about the category to the context."""
@@ -155,6 +154,7 @@ class ProfileListView(PaginateMixin, ListView):
     """
 
     template_name = 'blog/profile.html'
+    user_url_kwarg = 'username'
 
     def get_queryset(self):
         """
@@ -163,20 +163,18 @@ class ProfileListView(PaginateMixin, ListView):
         Returns all posts of the author if request user is equal to the author.
         Raises 404 error if there is no correct author.
         """
-        author = get_object_or_404(User, username=self.kwargs['username'])
+        author = get_object_or_404(
+            User, username=self.kwargs[self.user_url_kwarg]
+        )
         if self.request.user == author:
-            queryset = author.posts.with_related_data()
-        else:
-            queryset = author.posts.with_related_data().filter(
-                author=author
-            )
-        return queryset
+            return author.posts.with_related_data()
+        return author.posts.published()
 
     def get_context_data(self, **kwargs):
         """Adds information about the user to the context."""
         context = super().get_context_data(**kwargs)
         context['profile'] = get_object_or_404(
-            User, username=self.kwargs['username']
+            User, username=self.kwargs[self.user_url_kwarg]
         )
         return context
 
@@ -217,7 +215,7 @@ class PostDetailView(DetailView):
         Raises 404 error if post author is not equal to the request user and
         post is not published.
         """
-        post = get_object_or_404(Post, pk=kwargs['post_pk'])
+        post = get_object_or_404(Post, pk=kwargs[self.pk_url_kwarg])
         if post.is_published is False and request.user != post.author:
             raise Http404
         return super().dispatch(request, *args, **kwargs)
@@ -244,7 +242,9 @@ class PostUpdateView(PostDispatchMixin, LoginRequiredMixin, UpdateView):
         PostForm is successfully filled in & processed.
         """
         return reverse(
-            'blog:post_detail', kwargs={'post_pk': self.kwargs['post_pk']}
+            'blog:post_detail', kwargs={
+                'post_pk': self.kwargs[self.pk_url_kwarg]
+            }
         )
 
 
@@ -254,7 +254,7 @@ class PostDeleteView(PostDispatchMixin, LoginRequiredMixin, DeleteView):
     def get_context_data(self, **kwargs):
         """Adds the PostForm with related instance to the context."""
         context = super().get_context_data(**kwargs)
-        instance = Post.objects.get(pk=self.kwargs['post_pk'])
+        instance = Post.objects.get(pk=self.kwargs[self.pk_url_kwarg])
         context['form'] = PostForm(instance=instance)
         return context
 

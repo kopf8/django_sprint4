@@ -87,7 +87,7 @@ class PostQuerySet(models.QuerySet):
             is_published=True,
             category__is_published=True,
             pub_date__lte=timezone.now(),
-        ).order_by('-pub_date')
+        ).order_by('-pub_date').annotate(comment_count=Count('comments'))
 
 
 class PublishedPostManager(models.Manager):
